@@ -1,6 +1,3 @@
-// Advanced multi-click handling. Heavily inspired by on_multi_click in ESPHome.
-// Note: sequence patterns must end with an action of type "atLeast" (atMost might work, but doesn't logically make sense, and isn't tested).
-// When a sequence is completed, an event will be emitted with name "custom_button_sequence", and parameter object like {"name": "double_click", "compoment": "button:0"}
 const sequences = [
   { 
     name: "double_click", 
@@ -73,7 +70,7 @@ function createHandler(sequences, component) {
                 return;
               }
               if (seq.checkTimer(e.ts, Date.now(), matchEvent)) {
-                seq.onSequenceComplete(seq);
+                seq.onSequenceComplete(component);
               } else {
                 seq.canMatch = false;
               }
@@ -108,9 +105,9 @@ function createHandler(sequences, component) {
       };
     }),
     sequencesInProgress: null,
-    onSequenceComplete: function(sequence) {
+    onSequenceComplete: function(component) {
       this.reset();
-      Shelly.emitEvent("custom_button_sequence", {sequence: sequence.name, component: this.component})
+      Shelly.emitEvent("custom_button_sequence", {sequence: this.name, component: component})
     },
     handleClick: function(e) {
       if (this.sequencesInProgress == null) {
