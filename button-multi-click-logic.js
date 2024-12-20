@@ -42,37 +42,43 @@ function createHandler(sequences, component) {
         events: [],
         canMatch: true,
         timerHandle: null,
-        isMatch: function(e) {
-          if (this.timerHandle != null) {
+        isMatch: function(e, handler) {
+          /*if (this.timerHandle != null) {
             Timer.clear(this.timerHandle);
             this.timerHandle = null;
             this.canMatch = false;
-            return false;
-          }
+            handler.onSequenceFail(handler, this);
+            return;
+          }*/
           if (!this.canMatch) {
-            return false;
+            handler.onSequenceFail(handler, this);
+            return;
           }
           this.events.push(e);
           if (this.events.length > this.pattern.length) {
             this.canMatch = false;
-            return false;
+            handler.onSequenceFail(handler, this);
+            return;
           }
           var matchEvent = this.pattern[this.events.length - 1];
           if (matchEvent.action !== e.action) {
             this.canMatch = false;
-            return false;
+            handler.onSequenceFail(handler, this);
+            return;
           }
           
           var lastEvent = this.events.length == this.pattern.length;
           if (lastEvent) {
             this.timerHandle = Timer.set(matchEvent.duration * 1000, false, function(seq) {
+              seq.timerHandle = null;
               if (!seq.canMatch) {
                 return;
               }
               if (seq.checkTimer(e.ts, Date.now(), matchEvent)) {
-                seq.onSequenceComplete(component);
+                handler.onSequenceComplete(handler, seq);
               } else {
                 seq.canMatch = false;
+                handler.onSequenceFail(handler, seq);
               }
             }, this)
           } else if (this.events.length > 1) {
@@ -80,10 +86,10 @@ function createHandler(sequences, component) {
             matchEvent = this.pattern[this.events.length - 2];
             if (!this.checkTimer(ev.ts, e.ts, matchEvent)) {
               this.canMatch = false;
-              return false;
+              handler.onSequenceFail(handler, this);
+              return;
             }
           }
-          return null;
         },
         checkTimer: function(fromTime, toTime, timing) {
           var duration = toTime - fromTime;
@@ -105,23 +111,30 @@ function createHandler(sequences, component) {
       };
     }),
     sequencesInProgress: null,
-    onSequenceComplete: function(component) {
+    onSequenceComplete: function(handler, sequence) {
       this.reset();
-      Shelly.emitEvent("custom_button_sequence", {sequence: this.name, component: component})
+      Shelly.emitEvent("custom_button_sequence", {sequence: sequence.name, component: handler.component});
+    },
+    onSequenceFail: function(handler, sequence) {
+      sequence.reset();
+      var i = handler.sequencesInProgress.indexOf(sequence);
+      if (i >= 0) {
+        handler.sequencesInProgress.splice(i, 1);
+      }
+      if (handler.sequencesInProgress.length === 0) {
+        handler.reset();
+      }
     },
     handleClick: function(e) {
       if (this.sequencesInProgress == null) {
         this.sequencesInProgress = this.sequences.map(function(x) {return x});
       }
+      var sequences = "";
       for (var i = this.sequencesInProgress.length - 1; i >= 0; i--) {
-        var match = this.sequencesInProgress[i].isMatch(e);
-        if (match !== null && match) {
-          this.sequencesInProgress[i].reset();
-          this.sequencesInProgress.splice(i, 1);
-        }
+        sequences += this.sequencesInProgress[i].name + ", "
       }
-      if (this.sequencesInProgress.length == 0) {
-        this.sequencesInProgress = null;
+      for (var i = this.sequencesInProgress.length - 1; i >= 0; i--) {
+        this.sequencesInProgress[i].isMatch(e, this);
       }
     },
     reset: function() {
@@ -133,9 +146,6 @@ function createHandler(sequences, component) {
       }
     }
   };
-  for (var i = 0; i < handler.sequences.length; i++) {
-    handler.sequences[i].onSequenceComplete = handler.onSequenceComplete;
-  }
   return handler;
 }
 
@@ -152,41 +162,95 @@ Shelly.addEventHandler(function(e) {
       var action;
       if (e.info.event === "btn_down") {
         action = "down";
-      } else if (e.info.event === "bwn_up") {
+      } else if (e.info.event === "btn_up") {
         action = "up"
       } else {
         return;
       }
       handler.handleClick({
         action: action,
-        ts: e.ts
+        ts: e.info.ts * 1000
       })
     }
   }
 });
 
-function test() {
+function clickAndHold() {
   var handler = handlers["input:0"];
   handler.handleClick({
     action: "down",
     ts: Date.now()
   });
-  Timer.set(200, false, function() {
+  Timer.set(50, false, function() {
     handler.handleClick({
       action: "up",
       ts: Date.now()
     });
-    Timer.set(200, false, function() {
+    Timer.set(50, false, function() {
       handler.handleClick({
         action: "down",
         ts: Date.now()
       });
-      Timer.set(200, false, function() {
+      Timer.set(5000, false, function() {
         handler.handleClick({
           action: "up",
           ts: Date.now()
         });
       });
+    });
+  });
+}
+
+function click() {
+  var handler = handlers["input:0"];
+  handler.handleClick({
+    action: "down",
+    ts: Date.now()
+  });
+  Timer.set(50, false, function() {
+    handler.handleClick({
+      action: "up",
+      ts: Date.now()
+    });
+  });
+}
+
+function doubleClick() {
+  var handler = handlers["input:0"];
+  handler.handleClick({
+    action: "down",
+    ts: Date.now()
+  });
+  Timer.set(50, false, function() {
+    handler.handleClick({
+      action: "up",
+      ts: Date.now()
+    });
+    Timer.set(50, false, function() {
+      handler.handleClick({
+        action: "down",
+        ts: Date.now()
+      });
+      Timer.set(50, false, function() {
+        handler.handleClick({
+          action: "up",
+          ts: Date.now()
+        });
+      });
+    });
+  });
+}
+
+function hold() {
+  var handler = handlers["input:0"];
+  handler.handleClick({
+    action: "down",
+    ts: Date.now()
+  });
+  Timer.set(5000, false, function() {
+    handler.handleClick({
+      action: "up",
+      ts: Date.now()
     });
   });
 }
